@@ -1,0 +1,500 @@
+Monthly File Volume Forecasting System
+
+Complete Code Explanation and Step-by-Step Guide
+
+This notebook explains the Monthly File Volume Forecasting System using
+the supplied Python script.
+
+What this system does
+
+-   Uploads one or more Excel workbooks.
+-   Reads all sheets from each uploaded workbook.
+-   Identifies the received date, Submission ID and optional Status
+    columns.
+-   Includes duplicate nonblank Submission ID rows in the file count.
+-   Applies the status filter when a Status column exists.
+-   Builds daily and monthly file-volume history.
+-   Analyses weekdays, month periods and historical busy three-day
+    windows.
+-   Trains and compares Random Forest and Extra Trees models.
+-   Compares both machine-learning models with a Seasonal Naive
+    baseline.
+-   Selects the better machine-learning model using WAPE.
+-   Forecasts a selected future month.
+-   Finds the top four non-overlapping predicted busy three-day date
+    ranges.
+
+Important: The code cell at the end contains the supplied .py script as
+provided. The explanation cells describe what each section does; they do
+not change the script’s logic.
+
+==============================================================================
+
+1. Requirements and installation
+
+The script uses: - pandas to read, clean, group and analyse tabular
+data. - numpy for numerical operations and feature calculations. - re
+for normalising column names. - warnings to suppress warning messages. -
+google.colab.files to upload Excel files in Google Colab. -
+IPython.display.display to show tables. - RandomForestRegressor and
+ExtraTreesRegressor for forecasting. - mean_absolute_error to calculate
+MAE.
+
+The original script installs openpyxl and scikit-learn. Pandas and NumPy
+are also required in the runtime.
+
+==============================================================================
+
+2. Uploading Excel files
+
+The script uses files.upload() to open the Google Colab upload window.
+
+It accepts uploaded Excel files with .xlsx, .xlsm or .xls extensions. If
+no file is uploaded, the script stops with an error.
+
+Every uploaded workbook is processed. Inside each workbook, the script
+checks every worksheet.
+
+==============================================================================
+
+3. Column identification
+
+Column names are normalised by converting them to lowercase and removing
+characters other than letters and numbers.
+
+For example, names such as Submission ID, Submission_ID and submissionid
+normalise to the same key.
+
+The script looks for these column groups:
+
+  -----------------------------------------------------------------------
+  Purpose                             Accepted normalised names
+  ----------------------------------- -----------------------------------
+  Received date                       receiveddatetime, receiveddate,
+                                      receiveddatetimeutc,
+                                      receiveddateutc,
+                                      receiveddatetimeist,
+                                      receiveddateandtime
+
+  Submission ID                       submissionid, submissionnumber,
+                                      submission
+
+  Status                              status, submissionstatus,
+                                      filestatus, processingstatus
+  -----------------------------------------------------------------------
+
+The date and Submission ID columns are mandatory for a sheet to be
+processed. Status is optional.
+
+==============================================================================
+
+4. Date conversion
+
+convert_dates() handles different date formats:
+
+1.  If the column is already a datetime type, it converts it to pandas
+    datetime.
+2.  If values look like Excel serial dates, it converts them using
+    Excel’s date origin (1899-12-30).
+3.  Otherwise, it attempts to parse text dates with dayfirst=True.
+4.  If the mixed-format parser is unavailable or fails, it tries the
+    fallback parser.
+
+Dates that cannot be parsed become missing values and are excluded
+later.
+
+==============================================================================
+
+5. Reading all workbooks and worksheets
+
+For every uploaded workbook, the script: 1. Opens the workbook with
+pd.ExcelFile. 2. Iterates through every worksheet. 3. Skips empty
+sheets. 4. Detects the required columns. 5. Skips a sheet if the
+received date or Submission ID column is missing. 6. Keeps rows with a
+nonblank Submission ID. 7. Applies the allowed status filter if a Status
+column exists. 8. Converts the received date. 9. Excludes rows with
+invalid dates. 10. Stores the date-level data for the combined analysis.
+
+The script records a processing summary for each sheet, including row
+counts before and after the status filter, invalid dates and final
+counted rows.
+
+==============================================================================
+
+6. Duplicate Submission IDs
+
+The code intentionally counts rows, not unique Submission IDs.
+
+It removes blank Submission IDs, but it does not call drop_duplicates()
+or use a distinct count. Therefore, if the same Submission ID appears on
+multiple eligible rows, each eligible row contributes to the file
+volume.
+
+This is an important business rule of the supplied script.
+
+==============================================================================
+
+7. Status filter
+
+The allowed status values are: - complete - completed - qa uploaded
+
+The script applies this filter only when a Status column is detected. If
+no Status column exists, it leaves the rows unfiltered by status.
+
+Status comparison is case-insensitive and ignores leading/trailing
+spaces.
+
+==============================================================================
+
+8. Combining the data
+
+All valid processed date rows from all uploaded sheets are concatenated
+into one DataFrame.
+
+The combined data is sorted by Received_Date. The script then prints the
+total eligible row count and confirms that duplicate Submission IDs are
+included.
+
+==============================================================================
+
+9. Monthly actual file volume
+
+The received date is converted to a monthly period. The script groups
+rows by month and counts rows in each month.
+
+Because the count uses .size(), duplicate Submission IDs remain
+included.
+
+The result is displayed as Month and Total Files.
+
+==============================================================================
+
+10. Daily actual file volume
+
+The script groups the combined data by Received_Date and counts rows for
+each date.
+
+It adds: - Weekday: day name such as Monday or Tuesday. - Month: month
+name and year such as November 2026.
+
+This daily series is the foundation for the forecasting model.
+
+==============================================================================
+
+11. Weekday analysis
+
+Daily counts are grouped by weekday and summarised using: - sum: total
+files received on that weekday across the history. - mean: average files
+per occurrence of that weekday. - count: number of dates on which that
+weekday appears in the daily data.
+
+The weekday rows are ordered Monday through Sunday. The average is
+rounded to a whole number.
+
+==============================================================================
+
+12. Beginning, middle and end of month
+
+Each row is assigned to a month period based on its day of month:
+
+  Day of month      Period
+  ----------------- --------------------
+  1–10              Beginning (1-10)
+  11–20             Middle (11-20)
+  21 to month end   End (21-Month End)
+
+The script counts the rows in each period. This is a historical volume
+analysis, not a forecast.
+
+==============================================================================
+
+13. Historical top 10 busiest three-day periods
+
+For each historical month, the script: 1. Creates a complete daily date
+range for that month. 2. Reindexes daily counts so dates with no files
+receive a count of zero. 3. Moves through the month one day at a time.
+4. Adds the counts for each consecutive three-day window. 5. Stores the
+start date, end date, month and three-day file count. 6. Sorts all
+windows by file count and displays the top 10.
+
+These historical windows can overlap. The non-overlapping rule is used
+later for the predicted windows, not this historical top-10 analysis.
+
+==============================================================================
+
+14. Continuous daily series
+
+The forecasting model needs a continuous daily time series.
+
+The script creates a date range from the first historical date to the
+last historical date and reindexes the daily counts against it. Missing
+dates are filled with zero.
+
+This ensures that lag features such as the previous day and previous
+seven days refer to consecutive calendar days.
+
+==============================================================================
+
+15. Machine-learning features
+
+create_features() converts each date and its preceding daily counts into
+predictor variables.
+
+  Feature               Meaning
+  --------------------- -----------------------------------------------
+  Weekday               Day of week as a number (Monday = 0)
+  Day                   Day number in the month
+  Month                 Month number
+  DayOfYear             Day number in the year
+  WeekOfYear            ISO week number
+  IsWeekend             1 for Saturday/Sunday; otherwise 0
+  MonthSin / MonthCos   Cyclical representation of month
+  DaySin / DayCos       Cyclical representation of day in month
+  Lag1                  Previous day’s file count
+  Lag7                  File count seven days earlier
+  Lag14                 File count fourteen days earlier
+  Rolling7              Average of the previous seven daily counts
+  Rolling14             Average of the previous fourteen daily counts
+
+The model starts creating training examples at index 14 because it needs
+at least 14 days of history for the lag and rolling features.
+
+==============================================================================
+
+16. Minimum history requirement
+
+After feature creation, the script requires at least 30 training
+examples. If fewer than 30 are available, it stops and asks for more
+complete monthly reports.
+
+This is the script’s minimum data check. It does not guarantee that
+every dataset with 30 examples will produce a highly accurate forecast.
+
+==============================================================================
+
+17. Model configuration
+
+Two machine-learning models are configured:
+
+Random Forest Regressor - 400 trees (n_estimators=400) - Maximum depth
+8 - Minimum samples per leaf 3 - Uses 80% of available features at each
+split - Fixed random state 42 - Uses all available CPU cores (n_jobs=-1)
+
+Extra Trees Regressor - Uses the same parameter values as Random Forest.
+
+Both models are regression models. They estimate a numeric daily file
+count.
+
+==============================================================================
+
+18. Temporal backtesting
+
+The last month in the historical daily series is held out as the
+validation month.
+
+-   Training examples are restricted to dates before the first day of
+    that month.
+-   Validation dates run from the first day of the last month through
+    the last available historical date.
+-   Actual daily counts for those dates are compared with model
+    predictions.
+
+This is a time-based validation approach: the model is trained on
+earlier dates and tested on a later period.
+
+==============================================================================
+
+19. Recursive prediction
+
+recursive_predict() predicts one date at a time.
+
+For each date: 1. It builds features using the available past values. 2.
+It asks the trained model for a prediction. 3. It limits the prediction
+to zero or above. 4. It appends the prediction to the history. 5. The
+next date uses that updated history.
+
+This means that after the first forecast day, lag and rolling features
+can include earlier predicted values rather than actual values.
+
+==============================================================================
+
+20. MAE and WAPE
+
+MAE — Mean Absolute Error
+
+MAE is the average absolute difference between actual and predicted
+daily file counts. Its unit is files per day. A lower MAE indicates
+smaller average absolute errors.
+
+WAPE — Weighted Absolute Percentage Error
+
+The script calculates:
+
+WAPE = sum(abs(actual - predicted)) / sum(abs(actual)) * 100
+
+A lower WAPE indicates that the total absolute prediction error is
+smaller relative to the total actual volume. If the sum of absolute
+actual values is zero, the function returns a missing value.
+
+WAPE-based Performance Indicator
+
+The script calculates max(0, 100 - WAPE). This is a score derived from
+WAPE for reporting; it is not a separate statistical accuracy metric.
+
+==============================================================================
+
+21. Model comparison and Seasonal Naive baseline
+
+The script tests Random Forest and Extra Trees on the validation month
+and calculates MAE, WAPE and the WAPE-based Performance Indicator.
+
+It also creates a Seasonal Naive baseline: for each validation date, it
+uses the actual count from seven days earlier when that date exists in
+the historical series; otherwise it uses zero.
+
+The three results are displayed together, sorted by WAPE.
+
+==============================================================================
+
+22. Selecting the best machine-learning model
+
+The script filters the comparison table to Random Forest and Extra
+Trees, then selects the one with the lowest WAPE.
+
+The Seasonal Naive model is included as a baseline comparison but is not
+eligible to become the final selected model.
+
+The selected machine-learning model is rebuilt and trained again using
+all available feature rows and targets.
+
+==============================================================================
+
+23. Model performance report
+
+The report displays: - Selected machine-learning model. - Validation
+month. - MAE in files per day. - WAPE percentage. - WAPE-based
+Performance Indicator.
+
+The status labels are: - 80 or higher: Strong historical fit. - 65 to
+below 80: Good historical fit. - 50 to below 65: Moderate historical
+fit. - Below 50: Needs improvement.
+
+These are the script’s own reporting thresholds.
+
+==============================================================================
+
+24. Selecting the prediction month
+
+The default prediction month is the month immediately after the latest
+historical month.
+
+The user can enter a different month in YYYY-MM format. The script
+checks that the selected month is after the latest historical month. It
+then calculates the selected month’s start and end dates.
+
+==============================================================================
+
+25. Predicting daily and monthly file volume
+
+The script recursively predicts dates from the day after the last
+historical date through the end of the selected prediction month.
+
+It then keeps only dates inside the requested month, rounds predicted
+file counts to whole numbers and adds: - Weekday. - Period (Beginning,
+Middle or End).
+
+The monthly estimate is the sum of the rounded daily predictions for the
+selected month.
+
+==============================================================================
+
+26. Top four non-overlapping predicted busy three-day periods
+
+The script calculates every consecutive three-day window in the forecast
+month and sums the predicted file counts.
+
+It sorts windows from highest to lowest expected volume. It then selects
+a window only when its dates do not overlap any already selected window.
+
+Selection stops after four windows have been chosen or when no more
+non-overlapping candidates remain.
+
+The output contains priority, predicted date range and expected file
+count. If the month does not contain enough non-overlapping three-day
+windows, fewer than four may be available.
+
+==============================================================================
+
+27. Feature importance
+
+After final training, the script reads feature_importances_ from the
+selected tree-based model.
+
+It sorts the features from highest to lowest importance and displays the
+top 10.
+
+Feature importance describes how much the fitted model used each feature
+to make its splits. It does not prove that a feature causes file volume
+to increase or decrease.
+
+==============================================================================
+
+28. Management-ready summary
+
+The final summary brings together: - Forecast month. - Selected model. -
+Estimated total files. - Historical validation WAPE. - WAPE-based
+Performance Indicator. - Average daily error (MAE). - Top four predicted
+busy date ranges.
+
+The script also displays the data-processing summary and sheet-wise
+processing summary.
+
+==============================================================================
+
+29. Important scope and interpretation notes
+
+-   The script counts eligible rows with nonblank Submission IDs; it
+    does not count distinct Submission IDs.
+-   Duplicate Submission IDs are intentionally included.
+-   Blank Submission IDs are excluded.
+-   Invalid received dates are excluded.
+-   Status filtering is conditional: it is applied only when a
+    recognised Status column exists.
+-   The model uses daily counts. It does not forecast individual
+    Submission IDs.
+-   The script’s prediction is based on historical patterns and should
+    be treated as an estimate, not a guarantee.
+-   The historical top 10 three-day windows may overlap; the predicted
+    top four windows are selected to be non-overlapping.
+-   The code runs in Google Colab because it uses google.colab.files for
+    upload.
+
+==============================================================================
+
+30. How to explain this project in a meeting
+
+You can explain it like this:
+
+  I developed a monthly file-volume forecasting system using historical
+  Excel reports. The system reads multiple workbooks and worksheets,
+  validates the received date and Submission ID columns, and counts
+  every eligible nonblank Submission ID row, including duplicates. It
+  analyses monthly, daily and weekday volumes and identifies historical
+  busy periods. For forecasting, it creates calendar and historical
+  lag-based features, then compares Random Forest and Extra Trees
+  against a Seasonal Naive baseline using MAE and WAPE. It selects the
+  better machine-learning model based on validation WAPE, retrains it on
+  the available history and forecasts the selected month. Finally, it
+  highlights the four highest-volume non-overlapping three-day windows
+  to support workload planning.
+
+==============================================================================
+
+31. Original Python script
+
+The next cell contains the supplied Python script in one code cell. It
+is included as the script content, not rewritten as a new
+implementation.
+
+Google Colab note: The first line uses Colab’s !pip installation syntax
+and the script imports google.colab.files.
